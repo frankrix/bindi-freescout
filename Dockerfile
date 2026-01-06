@@ -1,10 +1,16 @@
 # FreeScout for Bindi AI Support
-# Build: 2026-01-06-v12 - Minimal extensions
+# Build: 2026-01-06-v13 - Add gd, intl, zip, mbstring, bcmath
 
 FROM php:8.1-apache-bookworm
 
-# Only pdo_mysql, mysqli
-RUN docker-php-ext-install pdo_mysql mysqli
+# Install libs
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpng-dev libjpeg-dev libfreetype6-dev libzip-dev libicu-dev \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Configure and install extensions
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install pdo_mysql mysqli gd intl zip mbstring bcmath opcache
 
 # Apache port 8080
 RUN a2enmod rewrite \
