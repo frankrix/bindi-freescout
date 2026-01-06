@@ -1,16 +1,16 @@
 # FreeScout for Bindi AI Support
-# Build: 2026-01-06-v6 - PHP 7.4 for compatibility with FreeScout deps
+# Build: 2026-01-06-v7 - PHP 7.4 bullseye (Debian 11) for stability
 # Based on: https://github.com/freescout-helpdesk/freescout
 
-FROM php:7.4-apache
+FROM php:7.4-apache-bullseye
 
 LABEL maintainer="Bindi AI Team <hello@bindi-ai.com>"
 LABEL description="FreeScout Helpdesk for Bindi AI Support"
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libpng-dev \
-    libjpeg-dev \
+    libjpeg62-turbo-dev \
     libfreetype6-dev \
     libzip-dev \
     libicu-dev \
@@ -23,7 +23,6 @@ RUN apt-get update && apt-get install -y \
     wget \
     curl \
     git \
-    cron \
     default-mysql-client \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-configure intl \
@@ -38,8 +37,6 @@ RUN apt-get update && apt-get install -y \
         zip \
         imap \
         mbstring \
-        xml \
-        curl \
         bcmath \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -52,31 +49,14 @@ RUN a2enmod rewrite headers
 
 # Configure Apache for port 8080
 RUN sed -i 's/Listen 80/Listen 8080/' /etc/apache2/ports.conf \
-    && sed -i 's/:80/:8080/g' /etc/apache2/sites-available/000-default.conf
-
-# Set document root to public folder
-RUN sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/html/public|g' /etc/apache2/sites-available/000-default.conf
+    && sed -i 's/:80/:8080/g' /etc/apache2/sites-available/000-default.conf \
+    && sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/html/public|g' /etc/apache2/sites-available/000-default.conf
 
 # Add Directory directive for Laravel
-RUN echo '<Directory /var/www/html/public>\n\
-    Options Indexes FollowSymLinks\n\
-    AllowOverride All\n\
-    Require all granted\n\
-</Directory>' >> /etc/apache2/sites-available/000-default.conf
+RUN printf '<Directory /var/www/html/public>\n    Options Indexes FollowSymLinks\n    AllowOverride All\n    Require all granted\n</Directory>\n' >> /etc/apache2/sites-available/000-default.conf
 
 # PHP configuration
-RUN { \
-    echo 'upload_max_filesize = 128M'; \
-    echo 'post_max_size = 128M'; \
-    echo 'memory_limit = 256M'; \
-    echo 'max_execution_time = 300'; \
-    echo 'max_input_time = 300'; \
-    echo 'display_errors = Off'; \
-    echo 'display_startup_errors = Off'; \
-    echo 'error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT'; \
-    echo 'log_errors = On'; \
-    echo 'error_log = /var/log/php_errors.log'; \
-} > /usr/local/etc/php/conf.d/freescout.ini
+RUN printf 'upload_max_filesize = 128M\npost_max_size = 128M\nmemory_limit = 256M\nmax_execution_time = 300\nmax_input_time = 300\ndisplay_errors = Off\nlog_errors = On\n' > /usr/local/etc/php/conf.d/freescout.ini
 
 # Download and extract FreeScout
 ENV FREESCOUT_VERSION=1.8.201
@@ -85,97 +65,18 @@ RUN wget -q https://github.com/freescout-helpdesk/freescout/archive/refs/tags/${
     && tar -xzf /tmp/freescout.tar.gz --strip-components=1 -C /var/www/html \
     && rm /tmp/freescout.tar.gz
 
-# Install PHP dependencies (PHP 7.4 is compatible with composer.lock)
-RUN composer install --no-dev --optimize-autoloader --no-interaction
+# Install PHP dependencies
+RUN COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader --no-interaction
 
 # Create storage directories and set permissions
-RUN mkdir -p storage/app/public \
-    storage/framework/cache \
-    storage/framework/sessions \
-    storage/framework/views \
-    storage/logs \
-    bootstrap/cache \
+RUN mkdir -p storage/app/public storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
     && chown -R www-data:www-data /var/www/html \
-    && chmod -R 755 /var/www/html \
-    && chmod -R 775 storage bootstrap/cache \
-    && touch /var/log/php_errors.log \
-    && chown www-data:www-data /var/log/php_errors.log
+    && chmod -R 775 storage bootstrap/cache
 
-# Create entrypoint
-COPY <<'ENTRYPOINT' /usr/local/bin/freescout-entrypoint.sh
-#!/bin/bash
-set -e
-
-echo "=== FreeScout Bindi AI Support Starting ==="
-echo "Build: 2026-01-06-v6"
-echo "FreeScout Version: 1.8.201"
-echo "PHP Version: 7.4"
-
-cd /var/www/html
-
-# Generate .env if it doesn't exist
-if [ ! -f .env ]; then
-    echo "Creating .env file from environment variables..."
-    cat > .env << EOF
-APP_URL=${APP_URL:-http://localhost:8080}
-APP_KEY=${APP_KEY:-}
-
-DB_CONNECTION=mysql
-DB_HOST=${DB_HOST:-localhost}
-DB_PORT=${DB_PORT:-3306}
-DB_DATABASE=${DB_DATABASE:-freescout}
-DB_USERNAME=${DB_USERNAME:-freescout}
-DB_PASSWORD=${DB_PASSWORD:-}
-
-MAIL_DRIVER=smtp
-MAIL_HOST=${MAIL_HOST:-smtp.mailgun.org}
-MAIL_PORT=${MAIL_PORT:-587}
-MAIL_USERNAME=${MAIL_USERNAME:-}
-MAIL_PASSWORD=${MAIL_PASSWORD:-}
-MAIL_ENCRYPTION=${MAIL_ENCRYPTION:-tls}
-
-APP_DEBUG=false
-APP_ENV=production
-APP_TIMEZONE=Australia/Perth
-EOF
-fi
-
-# Generate app key if not set
-if [ -z "$APP_KEY" ]; then
-    echo "Generating application key..."
-    php artisan key:generate --force 2>/dev/null || true
-fi
-
-# Set permissions
-chown -R www-data:www-data storage bootstrap/cache
-chmod -R 775 storage bootstrap/cache
-
-# Run migrations
-echo "Running database migrations..."
-php artisan migrate --force 2>/dev/null || echo "Migrations skipped (may need database setup)"
-
-# Clear and cache
-php artisan config:cache 2>/dev/null || true
-php artisan route:cache 2>/dev/null || true
-php artisan view:cache 2>/dev/null || true
-
-# Show environment
-echo "=== Environment ==="
-echo "APP_URL: ${APP_URL:-not set}"
-echo "DB_HOST: ${DB_HOST:-not set}"
-echo "DB_DATABASE: ${DB_DATABASE:-not set}"
-echo "===================="
-
-# Start Apache
-echo "Starting Apache on port 8080..."
-exec apache2-foreground
-ENTRYPOINT
-
-RUN chmod +x /usr/local/bin/freescout-entrypoint.sh
+# Create entrypoint script
+RUN printf '#!/bin/bash\nset -e\necho "=== FreeScout v7 Starting ==="\ncd /var/www/html\nif [ ! -f .env ]; then\n  cat > .env << ENVEOF\nAPP_URL=${APP_URL:-http://localhost:8080}\nAPP_KEY=${APP_KEY:-}\nDB_CONNECTION=mysql\nDB_HOST=${DB_HOST:-localhost}\nDB_PORT=${DB_PORT:-3306}\nDB_DATABASE=${DB_DATABASE:-freescout}\nDB_USERNAME=${DB_USERNAME:-freescout}\nDB_PASSWORD=${DB_PASSWORD:-}\nAPP_DEBUG=false\nAPP_ENV=production\nAPP_TIMEZONE=Australia/Perth\nENVEOF\nfi\nif [ -z "$APP_KEY" ]; then php artisan key:generate --force 2>/dev/null || true; fi\nchown -R www-data:www-data storage bootstrap/cache\nchmod -R 775 storage bootstrap/cache\nphp artisan migrate --force 2>/dev/null || echo "Migration skipped"\nphp artisan config:cache 2>/dev/null || true\nexec apache2-foreground\n' > /usr/local/bin/start.sh \
+    && chmod +x /usr/local/bin/start.sh
 
 EXPOSE 8080
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
-    CMD curl -f http://localhost:8080/ || exit 1
-
-CMD ["/usr/local/bin/freescout-entrypoint.sh"]
+CMD ["/usr/local/bin/start.sh"]
