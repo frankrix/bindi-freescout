@@ -1,182 +1,55 @@
 # FreeScout for Bindi AI Support
-# Build: 2026-01-06-v4 - Use composer update for PHP 8.1 compatible deps
-# Based on: https://github.com/freescout-helpdesk/freescout
+# Build: 2026-01-06-v5 - Use official tiredofit/freescout image
+# Based on: https://hub.docker.com/r/tiredofit/freescout
 
-FROM php:8.1-apache-bookworm
+FROM tiredofit/freescout:latest
 
 LABEL maintainer="Bindi AI Team <hello@bindi-ai.com>"
 LABEL description="FreeScout Helpdesk for Bindi AI Support"
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    libpng-dev \
-    libjpeg-dev \
-    libfreetype6-dev \
-    libzip-dev \
-    libicu-dev \
-    libxml2-dev \
-    libonig-dev \
-    libcurl4-openssl-dev \
-    libc-client-dev \
-    libkrb5-dev \
-    unzip \
-    wget \
-    curl \
-    git \
-    cron \
-    supervisor \
-    default-mysql-client \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-configure intl \
-    && docker-php-ext-configure imap --with-kerberos --with-imap-ssl \
-    && docker-php-ext-install -j$(nproc) \
-        gd \
-        mysqli \
-        pdo_mysql \
-        gettext \
-        intl \
-        opcache \
-        zip \
-        imap \
-        mbstring \
-        xml \
-        curl \
-        bcmath \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Map Sevalla env vars to FreeScout expected vars
+# Sevalla provides: DB_HOST, DB_DATABASE, DB_PASSWORD, DB_PORT
+# FreeScout expects: DB_HOST, DB_NAME, DB_USER, DB_PASS, DB_PORT
 
-# Install Composer
-RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+# Set defaults that will be overridden by Sevalla env vars at runtime
+ENV DB_TYPE=mysql
+ENV DB_PORT=3306
+ENV SETUP_TYPE=AUTO
+ENV ENABLE_SSL_PROXY=TRUE
+ENV TIMEZONE=Australia/Perth
 
-# Enable Apache modules
-RUN a2enmod rewrite headers
+# Create wrapper script to map env vars
+COPY <<'WRAPPER' /etc/cont-init.d/00-sevalla-env
+#!/command/with-contenv bash
 
-# Configure Apache for port 8080 and FreeScout
-RUN sed -i 's/Listen 80/Listen 8080/' /etc/apache2/ports.conf \
-    && sed -i 's/:80/:8080/g' /etc/apache2/sites-available/000-default.conf
-
-# Set document root to public folder
-RUN sed -i 's|DocumentRoot /var/www/html|DocumentRoot /var/www/html/public|g' /etc/apache2/sites-available/000-default.conf
-
-# Add Directory directive for Laravel
-RUN echo '<Directory /var/www/html/public>\n\
-    Options Indexes FollowSymLinks\n\
-    AllowOverride All\n\
-    Require all granted\n\
-</Directory>' >> /etc/apache2/sites-available/000-default.conf
-
-# PHP configuration
-RUN { \
-    echo 'upload_max_filesize = 128M'; \
-    echo 'post_max_size = 128M'; \
-    echo 'memory_limit = 256M'; \
-    echo 'max_execution_time = 300'; \
-    echo 'max_input_time = 300'; \
-    echo 'display_errors = Off'; \
-    echo 'display_startup_errors = Off'; \
-    echo 'error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT'; \
-    echo 'log_errors = On'; \
-    echo 'error_log = /var/log/php_errors.log'; \
-} > /usr/local/etc/php/conf.d/freescout.ini
-
-# Download and extract FreeScout
-ENV FREESCOUT_VERSION=1.8.201
-WORKDIR /var/www/html
-RUN wget -q https://github.com/freescout-helpdesk/freescout/archive/refs/tags/${FREESCOUT_VERSION}.tar.gz -O /tmp/freescout.tar.gz \
-    && tar -xzf /tmp/freescout.tar.gz --strip-components=1 -C /var/www/html \
-    && rm /tmp/freescout.tar.gz
-
-# Remove composer.lock (has PHP 7 locked deps) and update to PHP 8.1 compatible versions
-RUN rm -f composer.lock \
-    && composer update --no-dev --optimize-autoloader --no-interaction
-
-# Create storage directories and set permissions
-RUN mkdir -p storage/app/public \
-    storage/framework/cache \
-    storage/framework/sessions \
-    storage/framework/views \
-    storage/logs \
-    bootstrap/cache \
-    && chown -R www-data:www-data /var/www/html \
-    && chmod -R 755 /var/www/html \
-    && chmod -R 775 storage bootstrap/cache \
-    && touch /var/log/php_errors.log \
-    && chown www-data:www-data /var/log/php_errors.log
-
-# Create entrypoint
-COPY <<'ENTRYPOINT' /usr/local/bin/freescout-entrypoint.sh
-#!/bin/bash
-set -e
-
-echo "=== FreeScout Bindi AI Support Starting ==="
-echo "Build: 2026-01-06-v4"
-echo "FreeScout Version: 1.8.201"
-
-cd /var/www/html
-
-# Generate .env if it doesn't exist
-if [ ! -f .env ]; then
-    echo "Creating .env file from environment variables..."
-    cat > .env << EOF
-APP_URL=${APP_URL:-http://localhost:8080}
-APP_KEY=${APP_KEY:-}
-
-DB_CONNECTION=mysql
-DB_HOST=${DB_HOST:-localhost}
-DB_PORT=${DB_PORT:-3306}
-DB_DATABASE=${DB_DATABASE:-freescout}
-DB_USERNAME=${DB_USERNAME:-freescout}
-DB_PASSWORD=${DB_PASSWORD:-}
-
-MAIL_DRIVER=smtp
-MAIL_HOST=${MAIL_HOST:-smtp.mailgun.org}
-MAIL_PORT=${MAIL_PORT:-587}
-MAIL_USERNAME=${MAIL_USERNAME:-}
-MAIL_PASSWORD=${MAIL_PASSWORD:-}
-MAIL_ENCRYPTION=${MAIL_ENCRYPTION:-tls}
-
-APP_DEBUG=false
-APP_ENV=production
-APP_TIMEZONE=Australia/Perth
-EOF
+# Map Sevalla env vars to FreeScout expected vars
+if [ -n "$DB_DATABASE" ] && [ -z "$DB_NAME" ]; then
+    export DB_NAME="$DB_DATABASE"
+    echo "DB_NAME=$DB_DATABASE" >> /etc/environment
+    printf "$DB_DATABASE" > /run/s6/container_environment/DB_NAME
 fi
 
-# Generate app key if not set
-if [ -z "$APP_KEY" ]; then
-    echo "Generating application key..."
-    php artisan key:generate --force 2>/dev/null || true
+if [ -n "$DB_USERNAME" ] && [ -z "$DB_USER" ]; then
+    export DB_USER="$DB_USERNAME"
+    echo "DB_USER=$DB_USERNAME" >> /etc/environment
+    printf "$DB_USERNAME" > /run/s6/container_environment/DB_USER
 fi
 
-# Set permissions
-chown -R www-data:www-data storage bootstrap/cache
-chmod -R 775 storage bootstrap/cache
+if [ -n "$DB_PASSWORD" ] && [ -z "$DB_PASS" ]; then
+    export DB_PASS="$DB_PASSWORD"
+    printf "$DB_PASSWORD" > /run/s6/container_environment/DB_PASS
+fi
 
-# Run migrations
-echo "Running database migrations..."
-php artisan migrate --force 2>/dev/null || echo "Migrations skipped (may need database setup)"
-
-# Clear and cache
-php artisan config:cache 2>/dev/null || true
-php artisan route:cache 2>/dev/null || true
-php artisan view:cache 2>/dev/null || true
-
-# Show environment
-echo "=== Environment ==="
-echo "APP_URL: ${APP_URL:-not set}"
+echo "=== Bindi AI FreeScout Starting ==="
+echo "Build: 2026-01-06-v5"
 echo "DB_HOST: ${DB_HOST:-not set}"
-echo "DB_DATABASE: ${DB_DATABASE:-not set}"
-echo "===================="
+echo "DB_NAME: ${DB_NAME:-$DB_DATABASE}"
+echo "=================================="
+WRAPPER
 
-# Start Apache
-echo "Starting Apache on port 8080..."
-exec apache2-foreground
-ENTRYPOINT
+RUN chmod +x /etc/cont-init.d/00-sevalla-env
 
-RUN chmod +x /usr/local/bin/freescout-entrypoint.sh
+# Override default ports - Sevalla requires 8080
+ENV NGINX_LISTEN_PORT=8080
 
 EXPOSE 8080
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
-    CMD curl -f http://localhost:8080/ || exit 1
-
-CMD ["/usr/local/bin/freescout-entrypoint.sh"]
