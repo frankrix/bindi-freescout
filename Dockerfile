@@ -1,5 +1,5 @@
 # FreeScout for Bindi AI Support
-# Build: 2026-01-06-v1 - Initial FreeScout setup
+# Build: 2026-01-06-v2 - Use DB_* env vars (Sevalla standard)
 # Based on: https://github.com/freescout-helpdesk/freescout
 
 FROM php:8.1-apache-bookworm
@@ -109,7 +109,7 @@ COPY <<'ENTRYPOINT' /usr/local/bin/freescout-entrypoint.sh
 set -e
 
 echo "=== FreeScout Bindi AI Support Starting ==="
-echo "Build: 2026-01-06-v1"
+echo "Build: 2026-01-06-v2"
 echo "FreeScout Version: 1.8.201"
 
 cd /var/www/html
@@ -122,11 +122,11 @@ APP_URL=${APP_URL:-http://localhost:8080}
 APP_KEY=${APP_KEY:-}
 
 DB_CONNECTION=mysql
-DB_HOST=${MYSQL_HOST:-localhost}
-DB_PORT=3306
-DB_DATABASE=${MYSQL_DATABASE:-freescout}
-DB_USERNAME=${MYSQL_USER:-freescout}
-DB_PASSWORD=${MYSQL_PASSWORD:-}
+DB_HOST=${DB_HOST:-localhost}
+DB_PORT=${DB_PORT:-3306}
+DB_DATABASE=${DB_DATABASE:-freescout}
+DB_USERNAME=${DB_USERNAME:-freescout}
+DB_PASSWORD=${DB_PASSWORD:-}
 
 MAIL_DRIVER=smtp
 MAIL_HOST=${MAIL_HOST:-smtp.mailgun.org}
@@ -163,8 +163,8 @@ php artisan view:cache 2>/dev/null || true
 # Show environment
 echo "=== Environment ==="
 echo "APP_URL: ${APP_URL:-not set}"
-echo "MYSQL_HOST: ${MYSQL_HOST:-not set}"
-echo "MYSQL_DATABASE: ${MYSQL_DATABASE:-not set}"
+echo "DB_HOST: ${DB_HOST:-not set}"
+echo "DB_DATABASE: ${DB_DATABASE:-not set}"
 echo "===================="
 
 # Start Apache
