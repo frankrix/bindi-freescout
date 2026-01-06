@@ -1,5 +1,5 @@
 # FreeScout for Bindi AI Support
-# Build: 2026-01-06-v2 - Use DB_* env vars (Sevalla standard)
+# Build: 2026-01-06-v3 - Remove tokenizer (built into PHP)
 # Based on: https://github.com/freescout-helpdesk/freescout
 
 FROM php:8.1-apache-bookworm
@@ -42,7 +42,6 @@ RUN apt-get update && apt-get install -y \
         xml \
         curl \
         bcmath \
-        tokenizer \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -109,7 +108,7 @@ COPY <<'ENTRYPOINT' /usr/local/bin/freescout-entrypoint.sh
 set -e
 
 echo "=== FreeScout Bindi AI Support Starting ==="
-echo "Build: 2026-01-06-v2"
+echo "Build: 2026-01-06-v3"
 echo "FreeScout Version: 1.8.201"
 
 cd /var/www/html
