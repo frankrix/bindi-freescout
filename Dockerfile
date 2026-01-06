@@ -1,5 +1,5 @@
 # FreeScout for Bindi AI Support
-# Build: 2026-01-06-v3 - Remove tokenizer (built into PHP)
+# Build: 2026-01-06-v4 - Use composer update for PHP 8.1 compatible deps
 # Based on: https://github.com/freescout-helpdesk/freescout
 
 FROM php:8.1-apache-bookworm
@@ -86,8 +86,9 @@ RUN wget -q https://github.com/freescout-helpdesk/freescout/archive/refs/tags/${
     && tar -xzf /tmp/freescout.tar.gz --strip-components=1 -C /var/www/html \
     && rm /tmp/freescout.tar.gz
 
-# Install PHP dependencies
-RUN composer install --no-dev --optimize-autoloader --no-interaction
+# Remove composer.lock (has PHP 7 locked deps) and update to PHP 8.1 compatible versions
+RUN rm -f composer.lock \
+    && composer update --no-dev --optimize-autoloader --no-interaction
 
 # Create storage directories and set permissions
 RUN mkdir -p storage/app/public \
@@ -108,7 +109,7 @@ COPY <<'ENTRYPOINT' /usr/local/bin/freescout-entrypoint.sh
 set -e
 
 echo "=== FreeScout Bindi AI Support Starting ==="
-echo "Build: 2026-01-06-v3"
+echo "Build: 2026-01-06-v4"
 echo "FreeScout Version: 1.8.201"
 
 cd /var/www/html
