@@ -1,15 +1,14 @@
 # FreeScout for Bindi AI Support
-# Build: 2026-01-06-v10 - Add extensions
+# Build: 2026-01-06-v11 - Extensions without IMAP
 
 FROM php:8.1-apache-bookworm
 
-# Install deps + extensions
+# Install deps + extensions (no IMAP - optional for FreeScout)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpng-dev libjpeg-dev libfreetype6-dev libzip-dev libicu-dev \
-    libc-client-dev libkrb5-dev unzip wget curl git default-mysql-client \
+    unzip wget curl git default-mysql-client \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-configure imap --with-kerberos --with-imap-ssl \
-    && docker-php-ext-install gd mysqli pdo_mysql intl opcache zip imap mbstring bcmath \
+    && docker-php-ext-install gd mysqli pdo_mysql intl opcache zip mbstring bcmath \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Apache port 8080
