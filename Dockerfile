@@ -1,5 +1,5 @@
 # FreeScout for Bindi AI Support
-# Build: 2026-01-06-v16 - Download FreeScout
+# Build: 2026-01-06-v17 - Composer install
 
 FROM php:8.1-apache-bookworm
 
@@ -19,14 +19,16 @@ RUN a2enmod rewrite \
 
 RUN printf '<Directory /var/www/html/public>\n  AllowOverride All\n  Require all granted\n</Directory>\n' >> /etc/apache2/sites-available/000-default.conf
 
-# Download FreeScout from GitHub
+# Download FreeScout
 WORKDIR /var/www/html
 RUN wget -q https://github.com/freescout-helpdesk/freescout/archive/refs/tags/1.8.201.tar.gz -O /tmp/fs.tar.gz \
-    && tar -xzf /tmp/fs.tar.gz --strip-components=1 \
-    && rm /tmp/fs.tar.gz
+    && tar -xzf /tmp/fs.tar.gz --strip-components=1 && rm /tmp/fs.tar.gz
 
-# Create test page to verify download
-RUN echo '<?php echo "FreeScout downloaded. Files: " . count(glob("*")); ?>' > /var/www/html/public/test.php
+# Composer install with ignore-platform-reqs
+RUN COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --optimize-autoloader --no-interaction --ignore-platform-reqs
+
+# Test page
+RUN echo '<?php echo "Composer done. Vendor: " . (is_dir("../vendor") ? "YES" : "NO"); ?>' > /var/www/html/public/test.php
 
 EXPOSE 8080
 CMD ["apache2-foreground"]
